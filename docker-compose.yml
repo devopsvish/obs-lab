@@ -1,0 +1,160 @@
+# Profiles keep RAM usage low on an 8 GB laptop:
+#   docker compose up -d                      -> app + metrics + alerting (Hours 2,3,5,6)
+#   docker compose --profile logs   up -d     -> adds Loki + Promtail     (Hour 4)
+#   docker compose --profile traces up -d     -> adds Tempo               (Hour 4)
+
+name: obs-lab
+
+x-app-base: &app-base
+  build:
+    context: ./app
+  restart: unless-stopped
+  environment: &app-env
+    REDIS_URL: redis://redis:6379/0
+    POSTGRES_DSN: postgresql://pizza:pizza@postgres:5432/pizza
+    ORDERS_URL: http://orders:8000
+    PAYMENTS_URL: http://payments:8000
+    BANK_URL: http://bank:8000
+  depends_on:
+    redis:
+      condition: service_healthy
+  mem_limit: 256m
+
+services:
+  # ---------- data stores ----------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pizza
+      POSTGRES_PASSWORD: pizza
+      POSTGRES_DB: pizza
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pizza"]
+      interval: 5s
+      retries: 10
+    mem_limit: 256m
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]          # exposed so the chaos script can reach it
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    mem_limit: 128m
+
+  # ---------- application ----------
+  gateway:
+    <<: *app-base
+    environment:
+      <<: *app-env
+      SERVICE: gateway
+    ports: ["8000:8000"]
+
+  orders:
+    <<: *app-base
+    environment:
+      <<: *app-env
+      SERVICE: orders
+    ports: ["8001:8000"]
+    depends_on:
+      redis: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+
+  payments:
+    <<: *app-base
+    environment:
+      <<: *app-env
+      SERVICE: payments
+    ports: ["8002:8000"]
+
+  bank:
+    <<: *app-base
+    environment:
+      <<: *app-env
+      SERVICE: bank
+    ports: ["8003:8000"]
+
+  # ---------- observability ----------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=6h
+      - --web.enable-lifecycle          # lets you POST /-/reload instead of restarting
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prom-data:/prometheus
+    ports: ["9090:9090"]
+    mem_limit: 512m
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+    ports: ["9093:9093"]
+    mem_limit: 128m
+
+  pager:
+    build: ./pager
+    ports: ["8090:8000"]
+    mem_limit: 128m
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["3000:3000"]
+    mem_limit: 384m
+
+  # ---------- logs (profile: logs) ----------
+  loki:
+    image: grafana/loki:3.3.2
+    profiles: ["logs"]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+    ports: ["3100:3100"]
+    mem_limit: 384m
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    profiles: ["logs"]
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 128m
+
+  # ---------- traces (profile: traces) ----------
+  tempo:
+    image: grafana/tempo:2.7.0
+    profiles: ["traces"]
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+    ports: ["3200:3200", "4317:4317"]
+    mem_limit: 384m
+
+  # ---------- load generator ----------
+  k6:
+    image: grafana/k6:0.55.0
+    profiles: ["load"]
+    volumes:
+      - ./loadgen:/scripts:ro
+    command: ["run", "/scripts/steady.js"]
+    environment:
+      TARGET: http://gateway:8000
+
+volumes:
+  prom-data:
+  grafana-data:

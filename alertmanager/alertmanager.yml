@@ -1,0 +1,23 @@
+# Alertmanager decides WHO gets told and HOW OFTEN.
+# Prometheus decides WHAT is wrong. Keep those two jobs separate in your head.
+
+route:
+  # group_by controls how alerts are bundled into a single notification.
+  group_by: ["alertname", "service"]
+  group_wait: 10s        # wait this long for more alerts before the first page
+  group_interval: 5m     # then wait this long before sending an updated page
+  repeat_interval: 1h    # re-page if still firing after this long
+  receiver: pager
+
+  # TODO (Hour 6): add child routes so severity=page goes to the pager and
+  # severity=ticket goes somewhere quieter.
+
+receivers:
+  - name: pager
+    webhook_configs:
+      - url: http://pager:8000/alert
+        send_resolved: true
+
+# TODO (Hour 6): add an inhibit_rule so that a service-down alert suppresses
+# the noisier high-latency alerts for the same service.
+inhibit_rules: []
