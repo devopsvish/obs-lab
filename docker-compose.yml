@@ -1,4 +1,10 @@
-# Profiles keep RAM usage low on an 8 GB laptop:
+# Ports are published on all interfaces, which means your EC2 SECURITY GROUP is
+# the only thing protecting this lab. Inbound rules must be scoped to your own
+# IP - never 0.0.0.0/0. None of these tools has authentication by default, and
+# Grafana is deliberately running with anonymous admin for lab convenience.
+# If your IP changes, update the SG. See docs/ec2-setup.md.
+#
+# Profiles keep RAM usage low:
 #   docker compose up -d                      -> app + metrics + alerting (Hours 2,3,5,6)
 #   docker compose --profile logs   up -d     -> adds Loki + Promtail     (Hour 4)
 #   docker compose --profile traces up -d     -> adds Tempo               (Hour 4)
@@ -36,7 +42,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]          # exposed so the chaos script can reach it
+    # NO published port. chaos.sh reaches Redis via `docker compose exec`.
+    # An internet-facing unauthenticated Redis is one of the most reliably
+    # exploited misconfigurations there is. Keep it on the internal network.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -115,6 +123,45 @@ services:
       - grafana-data:/var/lib/grafana
     ports: ["3000:3000"]
     mem_limit: 384m
+
+  # ---------- infrastructure metrics ----------
+  # node-exporter = the MACHINE (CPU, RAM, disk, network of your WSL host)
+  #
+  # NOTE FOR WSL: we mount /proc and /sys explicitly rather than bind-mounting
+  # / with rslave propagation. WSL2 marks / as a private mount, so Docker
+  # refuses rslave. Mounting the two paths directly sidesteps it entirely.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      # Ignore pseudo-filesystems and your Windows drives mounted at /mnt/c etc.
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|mnt/[a-z])($$|/)
+      - --no-collector.hwmon
+      - --no-collector.thermal_zone
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports: ["9100:9100"]
+    mem_limit: 128m
+
+  # cAdvisor = the CONTAINERS (per-container CPU, memory, throttling, restarts)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command: ["--housekeeping_interval=10s", "--docker_only=true"]
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    ports: ["8080:8080"]
+    mem_limit: 256m
 
   # ---------- logs (profile: logs) ----------
   loki:

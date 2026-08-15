@@ -33,3 +33,22 @@ scrape_configs:
         labels: {service: payments}
       - targets: ["bank:8000"]
         labels: {service: bank}
+
+  # The MACHINE: CPU, memory, disk, network of the WSL host.
+  # This is where you learn the USE method (Utilisation, Saturation, Errors).
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # The CONTAINERS: per-container CPU, memory, throttling, restarts.
+  # cAdvisor emits a LOT of series - a good place to see cardinality bite.
+  - job_name: cadvisor
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    metric_relabel_configs:
+      # Drop the noisiest cAdvisor metrics we will not use. Deliberate: this is
+      # how you control ingestion cost in production.
+      - source_labels: ["__name__"]
+        regex: "container_(tasks_state|memory_failures_total|blkio_device_usage_total).*"
+        action: drop
