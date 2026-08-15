@@ -88,7 +88,7 @@ services:
     image: prom/prometheus:v3.1.0
     command:
       - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=6h
+      - --storage.tsdb.retention.time=48h
       - --web.enable-lifecycle          # lets you POST /-/reload instead of restarting
     volumes:
       - ./prometheus:/etc/prometheus:ro

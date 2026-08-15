@@ -12,11 +12,14 @@ from pydantic import BaseModel
 from common.chaos import apply_chaos
 from common.config import SERVICE_NAME
 from common.logging_setup import setup_logging
-from common.telemetry import metrics_endpoint, setup_tracing
+from common.telemetry import MetricsMiddleware, metrics_endpoint, setup_tracing
 
 log = setup_logging()
 app = FastAPI(title="bank")
 setup_tracing(app, SERVICE_NAME)
+
+# register your metrics middleware here.
+app.add_middleware(MetricsMiddleware)
 
 
 class AuthorizeRequest(BaseModel):

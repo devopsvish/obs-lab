@@ -10,8 +10,11 @@ tell you NOTHING about whether customers can buy pizza.
 
 The TODOs below are the instrumentation you will add. Do not fill them in yet.
 """
+import time
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from starlette.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware
+from common.config import SERVICE_NAME
 
 # ---------------------------------------------------------------------------
 # METRIC DEFINITIONS
@@ -58,7 +61,7 @@ def metrics_endpoint() -> Response:
 
 
 # ---------------------------------------------------------------------------
-# TODO (Hour 3): write the middleware that records every request.
+# write the middleware that records every request.
 #
 # Spec you must satisfy:
 #   * time the request with time.perf_counter()
@@ -69,6 +72,41 @@ def metrics_endpoint() -> Response:
 #     ("/orders/8471"). Raw paths create unbounded cardinality and will melt
 #     your Prometheus. This is the single most common junior mistake.
 # ---------------------------------------------------------------------------
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Runs on EVERY request, before and after your handler."""
+
+    async def dispatch(self, request, call_next):
+        # Don't measure our own plumbing - it would drown out real traffic.
+        if request.url.path in ("/metrics", "/healthz"):
+            return await call_next(request)
+
+        start = time.perf_counter()
+        status = 500          # assume the worst; corrected below if we succeed
+
+        try:
+            response = await call_next(request)   # <-- your actual handler runs here
+            status = response.status_code
+            return response
+        finally:
+            duration = time.perf_counter() - start
+
+            # The route TEMPLATE ("/orders/{id}"), not the raw path ("/orders/8471").
+            route_obj = request.scope.get("route")
+            route = getattr(route_obj, "path", "unmatched")
+
+            http_requests_total.labels(
+                service=SERVICE_NAME,
+                route=route,
+                method=request.method,
+                status=str(status),
+            ).inc()
+
+            http_request_duration_seconds.labels(
+                service=SERVICE_NAME,
+                route=route,
+                method=request.method,
+            ).observe(duration)
 
 
 def setup_tracing(app, service_name: str) -> None:
