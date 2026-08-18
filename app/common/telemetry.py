@@ -50,6 +50,11 @@ http_request_duration_seconds = Histogram(
 #   - pizza_dependency_up{dependency}              Gauge
 # Ask yourself for each one: "if this number moved, would a customer notice?"
 
+pizza_orders_total = Counter(
+    "pizza_orders_total",
+    "Total pizza orders received.",
+    ["service", "status"],
+)
 
 def metrics_endpoint() -> Response:
     """Render the Prometheus exposition format.

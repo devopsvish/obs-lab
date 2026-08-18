@@ -150,12 +150,14 @@ services:
   # cAdvisor = the CONTAINERS (per-container CPU, memory, throttling, restarts)
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    command: ["--housekeeping_interval=10s", "--docker_only=true"]
+    command: ["--housekeeping_interval=10s"]
     privileged: true
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/sys:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
     devices:

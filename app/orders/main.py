@@ -9,7 +9,7 @@ from common.chaos import apply_chaos
 from common.config import PAYMENTS_URL, SERVICE_NAME
 from common.deps import http_client, init_db, pg_connect, redis_client
 from common.logging_setup import setup_logging
-from common.telemetry import MetricsMiddleware, metrics_endpoint, setup_tracing
+from common.telemetry import MetricsMiddleware, metrics_endpoint, setup_tracing, pizza_orders_total
 
 log = setup_logging()
 app = FastAPI(title="orders")
@@ -83,7 +83,9 @@ async def create_order(req: OrderRequest):
         )
         r.raise_for_status()
     except Exception as exc:
+        pizza_orders_total.labels(service=SERVICE_NAME, status="failed").inc()
         log.error("payment failed", extra={"order_id": order_id, "error": str(exc)})
         raise HTTPException(status_code=502, detail="payment failed")
 
+    pizza_orders_total.labels(service=SERVICE_NAME, status="confirmed").inc()
     return {"order_id": order_id, "status": "confirmed", "item": req.item}

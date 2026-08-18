@@ -49,6 +49,16 @@ make down          # stop
 make nuke          # stop and wipe data
 ```
 
+## Chaos
+
+```bash
+./chaos/chaos.sh show
+./chaos/chaos.sh clear-all
+./chaos/chaos.sh set bank '{"latency_ms":900,"error_rate":0.2}'
+./chaos/chaos.sh set bank '{"latency_ms":900}'
+./chaos/chaos.sh set bank '{"error_rate":0.4,"message":"bank meltdown"}'
+```
+
 ## Layout
 
 ```
@@ -76,3 +86,24 @@ PromQL, the dashboards, the SLO definitions, the recording rules, the alert
 rules, the runbooks, and the postmortems.
 
 Search the repo for `TODO` to find your work.
+
+
+## PromQL Commands
+```sum(rate(pizza_orders_total{status="failed"}[5m])) / sum(rate(pizza_orders_total[5m]))```
+```histogram_quantile(0.95, sum by (le, route) (rate(pizza_http_request_duration_seconds_bucket{service="gateway"}[5m])))```
+
+Which services show 5xx errors?
+```sum by (service) (rate(pizza_http_requests_total{status=~"5.."}[1m]))```
+
+```sum by (service) (rate(pizza_http_request_duration_seconds_sum[5m]))/sum by (service) (rate(pizza_http_request_duration_seconds_count[5m]))```
+
+## Grafana Panels
+RED - Rate, Errors, Duration (latency)
+Rate
+```sum by (service) (rate(pizza_http_requests_total[5m]))```
+Errors
+```sum(rate(pizza_orders_total{status="failed"}[5m]))/sum(rate(pizza_orders_total[5m]))```
+Duration or Latency
+```histogram_quantile(0.95, sum by (le, route) (rate(pizza_http_request_duration_seconds_bucket{service="gateway"}[5m])))```
+
+
